@@ -7,18 +7,21 @@ import json
 import google.generativeai as genai
 
 # --- KONFIGURACJA AI GEMINI ---
+# Pobieranie klucza z sekretów Streamlit Cloud
 if "GEMINI_API_KEY" in st.secrets:
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-    # Wymuszamy na modelu zwrot danych w formacie JSON dla łatwego parsowania
+    # Wymuszamy na modelu zwrot danych w formacie JSON
     model = genai.GenerativeModel('gemini-1.5-flash', generation_config={"response_mime_type": "application/json"})
 else:
     model = None
 
 # --- BAZA TŁUMACZEŃ (SŁOWNIK LOKALNY) ---
-# Twarde pozycje magazynowe, których AI ma nie ruszać
+# Twarde pozycje magazynowe, których AI ma nie ruszać.
 TRANSLATIONS_DICT = {
     "1t Electric d8 + chain hoist": "Wyciągarka łańcuchowa 1t D8+",
     "Flightcase": "Skrzynia transportowa",
+    "Speaker Stand": "Statyw głośnikowy",
+    "LED Screen Panel": "Panel ekranu LED"
 }
 
 def clean_item_name(name):
@@ -52,7 +55,15 @@ def get_ai_translations_batch(items_to_translate):
     
     try:
         response = model.generate_content(prompt)
-        result_list = json.loads(response.text)
+        
+        # Pancerne czyszczenie odpowiedzi z ewentualnych znaczników markdown dodanych przez AI
+        raw_text = response.text.strip()
+        if raw_text.startswith("```json"):
+            raw_text = raw_text[7:]
+        if raw_text.endswith("```"):
+            raw_text = raw_text[:-3]
+            
+        result_list = json.loads(raw_text.strip())
         
         # Przekształcamy listę JSON na słownik dla szybkiego dopasowywania w Pandas
         ai_dict = {}
@@ -63,7 +74,8 @@ def get_ai_translations_batch(items_to_translate):
             }
         return ai_dict
     except Exception as e:
-        st.error("Wystąpił błąd podczas komunikacji z AI. Sprawdź limit zapytań lub klucz API.")
+        # Ten komunikat pokaże dokładną, techniczną przyczynę błędu połączenia
+        st.error(f"Szczegółowy błąd komunikacji API: {e}")
         return {}
 
 def process_pdfs(uploaded_files):
@@ -105,7 +117,7 @@ def process_pdfs(uploaded_files):
     # 1. Oddzielamy to co znamy, od tego co wymaga interwencji AI
     items_for_ai = [item for item in unique_items if item not in TRANSLATIONS_DICT]
     
-    # 2. Wysyłamy nieznane pozycje do AI (tylko raz, zbiorczo!)
+    # 2. Wysyłamy nieznane pozycje do AI
     ai_results = {}
     if items_for_ai:
         ai_results = get_ai_translations_batch(items_for_ai)
@@ -140,7 +152,7 @@ st.set_page_config(page_title="Analizator Current RMS z AI", layout="wide")
 st.title("📦 Zestawienie Sprzętu: Current RMS -> Excel (Wsparcie AI)")
 
 if "GEMINI_API_KEY" not in st.secrets:
-    st.error("⚠️ Brak konfiguracji AI. Dodaj `GEMINI_API_KEY` w ustawieniach Secrets na Streamlit Cloud, aby włączyć automatyczne tłumaczenia logistyczne.")
+    st.error("⚠️ Brak konfiguracji AI. Dodaj `GEMINI_API_KEY` w ustawieniach Secrets na Streamlit Cloud.")
 
 st.write("Wgraj pliki PDF z listami pakunkowymi. Sztuczna inteligencja przeanalizuje nieznany sprzęt, nada mu profesjonalne nazwy estradowe i wygeneruje opisy dla ekipy.")
 
@@ -159,7 +171,7 @@ if uploaded_files:
                 with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
                     df_result.to_excel(writer, index=False, sheet_name='Odprawa')
                     
-                    # Proste formatowanie szerokości kolumn w Excelu
+                    # Formatowanie szerokości kolumn w Excelu
                     worksheet = writer.sheets['Odprawa']
                     worksheet.set_column('A:A', 10)
                     worksheet.set_column('B:B', 45)
