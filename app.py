@@ -10,8 +10,8 @@ import google.generativeai as genai
 # Pobieranie klucza z sekretów Streamlit Cloud
 if "GEMINI_API_KEY" in st.secrets:
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-    # Wymuszamy na modelu zwrot danych w formacie JSON
-    model = genai.GenerativeModel('gemini-1.5-flash', generation_config={"response_mime_type": "application/json"})
+    # Wymuszamy na modelu zwrot danych w formacie JSON i używamy wersji -latest
+    model = genai.GenerativeModel('gemini-1.5-flash-latest', generation_config={"response_mime_type": "application/json"})
 else:
     model = None
 
