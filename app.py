@@ -3,51 +3,17 @@ import pdfplumber
 import pandas as pd
 import re
 import io
-from deep_translator import GoogleTranslator
-
-# --- BAZA TŁUMACZEŃ (SŁOWNIK LOKALNY) ---
-# Wprowadź tutaj zwroty specyficzne dla Twojego magazynu, co do których 
-# chcesz mieć 100% pewności, że translator automatyczny nie zmieni ich znaczenia.
-# Jeśli pozycja znajduje się w tym słowniku, aplikacja pominie tłumaczenie internetowe.
-TRANSLATIONS_DICT = {
-    "1t Electric d8 + chain hoist": "Wyciągarka łańcuchowa 1t D8+",
-    "Flightcase": "Skrzynia transportowa",
-    "Speaker Stand": "Statyw głośnikowy",
-    "LED Screen Panel": "Panel ekranu LED"
-}
 
 def clean_item_name(name):
     if not isinstance(name, str):
         return name
     # Usunięcie wielokrotnych spacji (np. podwójna spacja staje się pojedynczą)
     name = re.sub(r'\s+', ' ', name)
-    # Standaryzacja ukośników (zamienia np. " / ", " /", "/ " na samo "/")
+    # Standaryzacja ukośników - kluczowe dla Current RMS! 
+    # Zamienia np. " / ", " /", "/ " na samo "/"
     name = re.sub(r'\s*/\s*', '/', name)
     # Usunięcie białych znaków na początku i na końcu nazwy
     return name.strip()
-
-def translate_item(item_name):
-    """
-    Funkcja tłumacząca: najpierw szuka dopasowania w słowniku lokalnym,
-    a w przypadku jego braku – wysyła zapytanie do Google Translate przez internet.
-    """
-    if not item_name:
-        return ""
-        
-    # 1. Sprawdzenie w słowniku lokalnym
-    polish_name = TRANSLATIONS_DICT.get(item_name)
-    if polish_name:
-        return f"{item_name} / {polish_name}"
-        
-    # 2. Automatyczne tłumaczenie przez internet
-    try:
-        # source='en' jest stabilniejsze dla sprzętu technicznego z Current RMS
-        translator = GoogleTranslator(source='en', target='pl')
-        auto_translation = translator.translate(item_name)
-        return f"{item_name} / {auto_translation} [Auto]"
-    except Exception:
-        # Zabezpieczenie w razie braku połączenia internetowego lub problemów z API Google
-        return f"{item_name} / [Błąd tłumaczenia automatycznego]"
 
 def process_pdfs(uploaded_files):
     all_items = []
@@ -98,11 +64,8 @@ def process_pdfs(uploaded_files):
     df_grouped = df_grouped.sort_values(by='Item_Clean').reset_index(drop=True)
     df_grouped = df_grouped.rename(columns={'Item_Clean': 'Item'})
     
-    # 5. Dodanie nowej kolumny z połączonym tłumaczeniem (hybrydowym)
-    df_grouped['Oryginalna nazwa / Tłumaczenie polskie'] = df_grouped['Item'].apply(translate_item)
-    
-    # Przestawienie kolumn (najpierw Quantity, potem Item, na końcu Tłumaczenie)
-    df_grouped = df_grouped[['Quantity', 'Item', 'Oryginalna nazwa / Tłumaczenie polskie']]
+    # Przestawienie kolumn (najpierw Quantity, potem Item - jak w Current RMS)
+    df_grouped = df_grouped[['Quantity', 'Item']]
     
     return df_grouped
 
@@ -110,13 +73,13 @@ def process_pdfs(uploaded_files):
 
 st.set_page_config(page_title="Analizator Current RMS", layout="wide")
 st.title("📦 Zestawienie Sprzętu: Current RMS -> Excel")
-st.write("Wgraj pliki PDF z listami pakunkowymi. Aplikacja ujednolici nazwy sprzętu, zsumuje pozycje z różnych plików oraz automatycznie wygeneruje polskie tłumaczenia.")
+st.write("Wgraj pliki PDF z listami pakunkowymi. Aplikacja ujednolici nazwy sprzętu (naprawiając błędy spacji i ukośników) oraz zsumuje pozycje z różnych kontenerów/projektów.")
 
 uploaded_files = st.file_uploader("Wybierz pliki PDF (możesz zaznaczyć kilka na raz)", type="pdf", accept_multiple_files=True)
 
 if uploaded_files:
     if st.button("Przetwórz pliki i ujednolic listy", type="primary"):
-        with st.spinner("Trwa skanowanie PDF-ów, sumowanie sprzętu i tłumaczenie pozycji..."):
+        with st.spinner("Trwa skanowanie PDF-ów i sumowanie sprzętu..."):
             df_result = process_pdfs(uploaded_files)
             
             if not df_result.empty:
@@ -125,7 +88,7 @@ if uploaded_files:
                 # Wyświetlenie podglądu tabeli
                 st.dataframe(df_result, use_container_width=True, height=400)
                 
-                # Konwersja do Excela i przygotowanie bufora do pobrania
+                # Konwersja do Excela i przycisk pobierania
                 buffer = io.BytesIO()
                 with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
                     df_result.to_excel(writer, index=False, sheet_name='Zbiorcza')
@@ -137,4 +100,4 @@ if uploaded_files:
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
             else:
-                st.warning("Nie znaleziono żadnych pozycji sprzętowych w wgranych plikach. Upewnij się, że są to poprawne PDF-y z Current RMS.")
+                st.warning("Nie znaleziono żadnych pozycji sprzętowych w wgranych plikach. Upewnij się, że są to poprawne PDFy z Current RMS.")
